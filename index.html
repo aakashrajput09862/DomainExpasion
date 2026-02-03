@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Gojo: Infinite Void (With Audio)</title>
+    <title>Gojo: Infinite Void (WAV Audio)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body {
@@ -182,12 +182,12 @@
     </div>
 
     <script>
-        // --- AUDIO SYSTEM ---
+        // --- AUDIO SYSTEM (UPDATED TO .WAV) ---
         const audioSys = {
-            blue: new Audio('blue.mp3'),
-            red: new Audio('red.mp3'),
-            electricity: new Audio('electricity.mp3'),
-            purple: new Audio('purple.mp3'),
+            blue: new Audio('blue.wav'),
+            red: new Audio('red.wav'),
+            electricity: new Audio('electricity.wav'),
+            purple: new Audio('purple.wav'),
             
             init: function() {
                 this.blue.loop = true;
@@ -502,7 +502,6 @@
             onFrame: async () => { await handsMesh.send({image: videoElement}); },
             width: 1280, height: 720
         });
-        // Note: Camera starts in startExperience()
     </script>
 </body>
 </html>
