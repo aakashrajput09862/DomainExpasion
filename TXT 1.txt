@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Gojo: Infinite Void (With Audio)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #020005;
+            overflow: hidden;
+            font-family: 'Segoe UI', sans-serif;
+            user-select: none;
+        }
+
+        #canvas-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+
+        canvas { display: block; }
+        #input_video { display: none; }
+
+        /* HUD */
+        #hud {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            display: flex;
+            gap: 40px;
+            pointer-events: none;
+        }
+
+        .technique {
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 15px 25px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+            transition: all 0.3s ease;
+            opacity: 0.5;
+            color: #fff;
+            text-align: center;
+        }
+        
+        .technique h2 { margin: 0; font-size: 1.2rem; text-transform: uppercase; }
+        .technique p { margin: 5px 0 0; font-size: 0.8rem; color: #aaa; }
+
+        .technique.blue.active { border-color: #00ffff; box-shadow: 0 0 20px #00ffff66; opacity: 1; }
+        .technique.red.active { border-color: #ff0055; box-shadow: 0 0 20px #ff005566; opacity: 1; }
+
+        /* VISION BOX */
+        #vision-container {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 320px;
+            height: 180px;
+            background: #000;
+            border: 2px solid #333;
+            border-radius: 8px;
+            z-index: 20;
+            overflow: hidden;
+            display: none;
+            box-shadow: 0 0 20px rgba(138, 43, 226, 0.4);
+        }
+
+        #vision-canvas {
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+        }
+
+        #vision-label {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #d600ff;
+            font-size: 10px;
+            padding: 2px 5px;
+            font-family: monospace;
+            pointer-events: none;
+        }
+
+        /* BUTTONS */
+        #btn-toggle-vision {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 50;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid cyan;
+            color: cyan;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: monospace;
+            text-transform: uppercase;
+            transition: 0.3s;
+        }
+        #btn-toggle-vision:hover {
+            background: rgba(0, 255, 255, 0.2);
+            box-shadow: 0 0 15px cyan;
+        }
+
+        /* START OVERLAY */
+        #start-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            cursor: pointer;
+        }
+        #start-screen h1 { letter-spacing: 5px; text-transform: uppercase; margin-bottom: 10px; }
+        #start-screen p { color: cyan; animation: pulse 1s infinite; }
+        
+        @keyframes pulse { 0% { opacity: 0.5; } 100% { opacity: 1; } }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 1.2rem;
+            z-index: 100;
+            display: none; /* Hidden until start */
+        }
+    </style>
+    
+    <!-- Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <!-- CLICK TO START (Required for Audio) -->
+    <div id="start-screen" onclick="startExperience()">
+        <h1>Domain Expansion</h1>
+        <p>► CLICK ANYWHERE TO INITIALIZE</p>
+    </div>
+
+    <div id="loading">CONJURING PARTICLES...</div>
+
+    <!-- Toggle Button -->
+    <button id="btn-toggle-vision" onclick="toggleVision()">Show Vision</button>
+
+    <!-- Technique Indicators -->
+    <div id="hud">
+        <div id="hud-blue" class="technique blue">
+            <h2>Blue</h2>
+            <p>Left Hand</p>
+        </div>
+        <div id="hud-red" class="technique red">
+            <h2>Red</h2>
+            <p>Right Hand</p>
+        </div>
+    </div>
+
+    <!-- AI Vision Box -->
+    <div id="vision-container">
+        <div id="vision-label">SIX EYES ACTIVE</div>
+        <canvas id="vision-canvas"></canvas>
+    </div>
+
+    <!-- Main Experience -->
+    <div id="canvas-container">
+        <video id="input_video"></video>
+        <canvas id="output_canvas"></canvas>
+    </div>
+
+    <script>
+        // --- AUDIO SYSTEM ---
+        const audioSys = {
+            blue: new Audio('blue.mp3'),
+            red: new Audio('red.mp3'),
+            electricity: new Audio('electricity.mp3'),
+            purple: new Audio('purple.mp3'),
+            
+            init: function() {
+                this.blue.loop = true;
+                this.red.loop = true;
+                this.electricity.loop = true;
+                
+                // Set initial volumes
+                this.blue.volume = 0.5;
+                this.red.volume = 0.5;
+                this.electricity.volume = 0;
+                this.purple.volume = 1.0;
+            },
+
+            playLoop: function(soundName) {
+                if (this[soundName].paused) {
+                    this[soundName].play().catch(e => console.log("Audio not ready or missing: " + soundName));
+                }
+            },
+
+            stopLoop: function(soundName) {
+                if (!this[soundName].paused) {
+                    this[soundName].pause();
+                    this[soundName].currentTime = 0;
+                }
+            },
+            
+            trigger: function(soundName) {
+                // Clone to allow overlapping blasts
+                let clone = this[soundName].cloneNode();
+                clone.play().catch(e => console.log("Audio missing"));
+            }
+        };
+
+        // --- APP STATE ---
+        let appStarted = false;
+        const startScreen = document.getElementById('start-screen');
+        const loading = document.getElementById('loading');
+
+        function startExperience() {
+            startScreen.style.display = 'none';
+            loading.style.display = 'block';
+            appStarted = true;
+            audioSys.init();
+            camera.start(); // Start camera only after user interaction
+        }
+
+        // --- ELEMENTS ---
+        const videoElement = document.getElementById('input_video');
+        const mainCanvas = document.getElementById('output_canvas');
+        const ctx = mainCanvas.getContext('2d');
+        const visionContainer = document.getElementById('vision-container');
+        const visionCanvas = document.getElementById('vision-canvas');
+        const visionCtx = visionCanvas.getContext('2d');
+        const hudBlue = document.getElementById('hud-blue');
+        const hudRed = document.getElementById('hud-red');
+
+        // --- CONFIG ---
+        let width, height;
+        const PARTICLE_COUNT = 800;
+        let particles = [];
+        let techniqueState = 'IDLE'; 
+        let purpleCharge = 0;
+        let purpleCenter = { x: 0, y: 0 };
+        
+        let hands = {
+            left: { x: 0, y: 0, active: false },
+            right: { x: 0, y: 0, active: false }
+        };
+
+        // Resize
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            mainCanvas.width = width;
+            mainCanvas.height = height;
+            visionCanvas.width = 320;
+            visionCanvas.height = 180;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Toggle Vision
+        function toggleVision() {
+            const btn = document.getElementById('btn-toggle-vision');
+            if (visionContainer.style.display === 'block') {
+                visionContainer.style.display = 'none';
+                btn.innerText = "Show Vision";
+                btn.style.borderColor = "cyan";
+                btn.style.color = "cyan";
+            } else {
+                visionContainer.style.display = 'block';
+                btn.innerText = "Hide Vision";
+                btn.style.borderColor = "#d600ff";
+                btn.style.color = "#d600ff";
+            }
+        }
+
+        // --- PARTICLE SYSTEM ---
+        function randomRange(min, max) { return Math.random() * (max - min) + min; }
+
+        function drawLightning(ctx, x1, y1, x2, y2, color, thickness) {
+            const dist = Math.hypot(x2 - x1, y2 - y1);
+            const steps = dist / 15;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            for (let i = 0; i < steps; i++) {
+                const t = (i + 1) / steps;
+                const tx = x1 + (x2 - x1) * t;
+                const ty = y1 + (y2 - y1) * t;
+                const jitter = (Math.random() - 0.5) * 20; 
+                ctx.lineTo(tx + jitter, ty + jitter);
+            }
+            ctx.strokeStyle = color;
+            ctx.lineWidth = thickness;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = color;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+
+        class Particle {
+            constructor() { this.reset(); }
+            reset() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.vx = randomRange(-1, 1);
+                this.vy = randomRange(-1, 1);
+                this.size = randomRange(1, 3);
+                this.r = 200; this.g = 240; this.b = 255;
+                this.friction = 0.95;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vx *= this.friction;
+                this.vy *= this.friction;
+
+                if (techniqueState === 'PURPLE') {
+                    const dx = this.x - purpleCenter.x;
+                    const dy = this.y - purpleCenter.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if(dist < 800) {
+                        this.vx -= (dx/dist) * 3;
+                        this.vy -= (dy/dist) * 3;
+                        this.r = 200; this.g = 0; this.b = 255;
+                        if(dist < purpleCharge * 2) this.reset();
+                    }
+                } else {
+                    if (hands.left.active) {
+                        const dx = hands.left.x - this.x;
+                        const dy = hands.left.y - this.y;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        if (dist < 400) {
+                            const angle = Math.atan2(dy, dx);
+                            this.vx += Math.cos(angle) * 1.5 - Math.sin(angle) * 2;
+                            this.vy += Math.sin(angle) * 1.5 + Math.cos(angle) * 2; 
+                            this.r = 0; this.g = 255; this.b = 255;
+                        }
+                    }
+                    if (hands.right.active) {
+                        const dx = this.x - hands.right.x;
+                        const dy = this.y - hands.right.y;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        if (dist < 300) {
+                            const angle = Math.atan2(dy, dx);
+                            this.vx -= Math.cos(angle) * 3;
+                            this.vy -= Math.sin(angle) * 3;
+                            this.r = 255; this.g = 0; this.b = 80;
+                        }
+                    }
+                    if(!hands.left.active && !hands.right.active) {
+                         if(this.r < 200) this.r+=5;
+                         if(this.g < 240) this.g+=5;
+                    }
+                }
+                if(this.x < 0) this.x = width;
+                if(this.x > width) this.x = 0;
+                if(this.y < 0) this.y = height;
+                if(this.y > height) this.y = 0;
+            }
+            draw() {
+                ctx.fillStyle = `rgb(${this.r},${this.g},${this.b})`;
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+            }
+        }
+        for(let i=0; i<PARTICLE_COUNT; i++) particles.push(new Particle());
+
+        // --- MAIN LOOP ---
+        function animate() {
+            ctx.fillStyle = 'rgba(2, 0, 5, 0.25)';
+            ctx.fillRect(0, 0, width, height);
+
+            particles.forEach(p => { p.update(); p.draw(); });
+
+            let dist = 9999;
+            if (hands.left.active && hands.right.active) {
+                dist = Math.hypot(hands.left.x - hands.right.x, hands.left.y - hands.right.y);
+            }
+
+            // --- SOUND LOGIC ---
+            if (appStarted) {
+                // Blue Sound
+                if (hands.left.active) audioSys.playLoop('blue');
+                else audioSys.stopLoop('blue');
+
+                // Red Sound
+                if (hands.right.active) audioSys.playLoop('red');
+                else audioSys.stopLoop('red');
+
+                // Electricity / Attraction Sound
+                if (hands.left.active && hands.right.active && dist < 400 && dist > 80) {
+                    audioSys.playLoop('electricity');
+                    // Volume gets louder as hands get closer
+                    let vol = 1 - (dist / 400); 
+                    audioSys.electricity.volume = Math.max(0, Math.min(1, vol));
+                } else {
+                    audioSys.stopLoop('electricity');
+                }
+            }
+
+            // --- VISUAL LOGIC ---
+            if (hands.left.active) {
+                ctx.beginPath();
+                ctx.arc(hands.left.x, hands.left.y, 20, 0, Math.PI*2);
+                ctx.fillStyle = '#00ffff';
+                ctx.shadowBlur = 30; ctx.shadowColor = '#00ffff';
+                ctx.fill();
+            }
+
+            if (hands.right.active) {
+                ctx.beginPath();
+                ctx.arc(hands.right.x, hands.right.y, 20, 0, Math.PI*2);
+                ctx.fillStyle = '#ff0055';
+                ctx.shadowBlur = 30; ctx.shadowColor = '#ff0055';
+                ctx.fill();
+            }
+
+            // Lightning & Purple
+            if (hands.left.active && hands.right.active) {
+                if (dist < 400 && dist > 80) {
+                    const intensity = (400 - dist) / 320;
+                    if (Math.random() < intensity) drawLightning(ctx, hands.left.x, hands.left.y, hands.right.x, hands.right.y, '#d600ff', 2 + intensity*3);
+                }
+
+                if (dist < 80) {
+                    if (techniqueState !== 'PURPLE') {
+                         // Trigger Explosion Sound ONCE when state changes
+                         if(appStarted) audioSys.trigger('purple');
+                    }
+                    techniqueState = 'PURPLE';
+                    purpleCenter.x = (hands.left.x + hands.right.x) / 2;
+                    purpleCenter.y = (hands.left.y + hands.right.y) / 2;
+                    if(purpleCharge < 100) purpleCharge += 2;
+                    
+                    ctx.beginPath(); ctx.arc(purpleCenter.x, purpleCenter.y, purpleCharge, 0, Math.PI*2);
+                    ctx.fillStyle = 'white'; ctx.shadowColor = '#bc13fe'; ctx.shadowBlur = 100; ctx.fill();
+                    
+                    ctx.beginPath(); ctx.arc(purpleCenter.x, purpleCenter.y, purpleCharge * 1.2, 0, Math.PI*2);
+                    ctx.strokeStyle = '#bc13fe'; ctx.lineWidth = 5; ctx.stroke();
+                } else {
+                    techniqueState = 'IDLE';
+                    purpleCharge = 0;
+                }
+            } else {
+                techniqueState = 'IDLE';
+                purpleCharge = 0;
+            }
+
+            ctx.shadowBlur = 0;
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        // --- MEDIAPIPE ---
+        function onResults(results) {
+            loading.style.display = 'none';
+
+            if (visionContainer.style.display === 'block') {
+                visionCtx.save();
+                visionCtx.clearRect(0, 0, visionCanvas.width, visionCanvas.height);
+                visionCtx.drawImage(results.image, 0, 0, visionCanvas.width, visionCanvas.height);
+                if (results.multiHandLandmarks) {
+                    for (const landmarks of results.multiHandLandmarks) {
+                        drawConnectors(visionCtx, landmarks, HAND_CONNECTIONS, {color: '#00ffff', lineWidth: 2});
+                        drawLandmarks(visionCtx, landmarks, {color: '#ff0055', lineWidth: 1, radius: 2});
+                    }
+                }
+                visionCtx.restore();
+            }
+
+            hands.left.active = false;
+            hands.right.active = false;
+
+            if (results.multiHandLandmarks) {
+                for (const landmarks of results.multiHandLandmarks) {
+                    const x = (1 - landmarks[8].x) * width;
+                    const y = landmarks[8].y * height;
+                    if (x < width / 2) { hands.left.active = true; hands.left.x = x; hands.left.y = y; } 
+                    else { hands.right.active = true; hands.right.x = x; hands.right.y = y; }
+                }
+            }
+            
+            if(hands.left.active) hudBlue.classList.add('active'); else hudBlue.classList.remove('active');
+            if(hands.right.active) hudRed.classList.add('active'); else hudRed.classList.remove('active');
+        }
+
+        const handsMesh = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        handsMesh.setOptions({maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5});
+        handsMesh.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { await handsMesh.send({image: videoElement}); },
+            width: 1280, height: 720
+        });
+        // Note: Camera starts in startExperience()
+    </script>
+</body>
+</html>
